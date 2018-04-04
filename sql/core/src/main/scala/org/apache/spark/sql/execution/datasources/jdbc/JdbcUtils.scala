@@ -69,12 +69,13 @@ object JdbcUtils extends Logging {
    */
   def tableExists(conn: Connection, options: JDBCOptions): Boolean = {
     val dialect = JdbcDialects.get(options.url)
-
+    val queryTimeout = options.queryTimeout
     // Somewhat hacky, but there isn't a good way to identify whether a table exists for all
     // SQL database systems using JDBC meta data calls, considering "table" could also include
     // the database name. Query used to find table exists can be overridden by the dialects.
     Try {
       val statement = conn.prepareStatement(dialect.getTableExistsQuery(options.table))
+      statement.setQueryTimeout(queryTimeout)
       try {
         statement.executeQuery()
       } finally {
@@ -100,7 +101,9 @@ object JdbcUtils extends Logging {
    */
   def truncateTable(conn: Connection, options: JDBCOptions): Unit = {
     val dialect = JdbcDialects.get(options.url)
+    val queryTimeout = options.queryTimeout
     val statement = conn.createStatement
+    statement.setQueryTimeout(queryTimeout)
     try {
       statement.executeUpdate(dialect.getTruncateQuery(options.table))
     } finally {
@@ -250,9 +253,11 @@ object JdbcUtils extends Logging {
    */
   def getSchemaOption(conn: Connection, options: JDBCOptions): Option[StructType] = {
     val dialect = JdbcDialects.get(options.url)
+    val queryTimeout = options.queryTimeout
 
     try {
       val statement = conn.prepareStatement(dialect.getSchemaQuery(options.table))
+      statement.setQueryTimeout(queryTimeout)
       try {
         Some(getSchema(statement.executeQuery(), dialect))
       } catch {
@@ -596,7 +601,8 @@ object JdbcUtils extends Logging {
       insertStmt: String,
       batchSize: Int,
       dialect: JdbcDialect,
-      isolationLevel: Int): Iterator[Byte] = {
+      isolationLevel: Int,
+      queryTimeout: Int): Iterator[Byte] = {
     val conn = getConnection()
     var committed = false
 
@@ -631,6 +637,7 @@ object JdbcUtils extends Logging {
         conn.setTransactionIsolation(finalIsolationLevel)
       }
       val stmt = conn.prepareStatement(insertStmt)
+      stmt.setQueryTimeout(queryTimeout)
       val setters = rddSchema.fields.map(f => makeSetter(conn, dialect, f.dataType))
       val nullTypes = rddSchema.fields.map(f => getJdbcType(f.dataType, dialect).jdbcNullType)
       val numFields = rddSchema.fields.length
@@ -809,6 +816,7 @@ object JdbcUtils extends Logging {
     val getConnection: () => Connection = createConnectionFactory(options)
     val batchSize = options.batchSize
     val isolationLevel = options.isolationLevel
+    val queryTimeout = options.queryTimeout
 
     val insertStmt = getInsertStatement(table, rddSchema, tableSchema, isCaseSensitive, dialect)
     val repartitionedDF = options.numPartitions match {
@@ -819,7 +827,7 @@ object JdbcUtils extends Logging {
       case _ => df
     }
     repartitionedDF.rdd.foreachPartition(iterator => savePartition(
-      getConnection, table, iterator, rddSchema, insertStmt, batchSize, dialect, isolationLevel)
+      getConnection, table, iterator, rddSchema, insertStmt, batchSize, dialect, isolationLevel, queryTimeout)
     )
   }
 
@@ -833,6 +841,7 @@ object JdbcUtils extends Logging {
     val strSchema = schemaString(
       df, options.url, options.createTableColumnTypes)
     val table = options.table
+    val queryTimeout = options.queryTimeout
     val createTableOptions = options.createTableOptions
     // Create the table if the table does not exist.
     // To allow certain options to append when create a new table, which can be
@@ -840,6 +849,7 @@ object JdbcUtils extends Logging {
     // E.g., "CREATE TABLE t (name string) ENGINE=InnoDB DEFAULT CHARSET=utf8"
     val sql = s"CREATE TABLE $table ($strSchema) $createTableOptions"
     val statement = conn.createStatement
+    statement.setQueryTimeout(queryTimeout)
     try {
       statement.executeUpdate(sql)
     } finally {

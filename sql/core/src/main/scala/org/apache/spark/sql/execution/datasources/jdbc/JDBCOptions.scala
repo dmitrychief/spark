@@ -88,6 +88,8 @@ class JDBCOptions(
 
   // the number of partitions
   val numPartitions = parameters.get(JDBC_NUM_PARTITIONS).map(_.toInt)
+  // the jdbc query timeout (in seconds)
+  val queryTimeout = parameters.get(JDBC_QUERY_TIMEOUT).map(_.toInt).getOrElse(0)
 
   // ------------------------------------------------------------
   // Optional parameters only for reading
@@ -168,4 +170,5 @@ object JDBCOptions {
   val JDBC_BATCH_INSERT_SIZE = newOption("batchsize")
   val JDBC_TXN_ISOLATION_LEVEL = newOption("isolationLevel")
   val JDBC_SESSION_INIT_STATEMENT = newOption("sessionInitStatement")
+  val JDBC_QUERY_TIMEOUT = newOption("queryTimeout")
 }
